@@ -127,14 +127,23 @@
               <input id="nicknameInput" maxlength="20" autocomplete="nickname" />
             </label>
             <label>
-              表示カラー
-              <input id="colorInput" type="color" />
+              ひとこと
+              <input id="greetingInput" maxlength="20" placeholder="例: よろしくお願いします！" />
             </label>
+            <fieldset>
+              <legend>表示カラー</legend>
+              <div class="color-picker" id="colorPicker" aria-label="表示カラーを選択"></div>
+              <input id="colorInput" type="hidden" />
+            </fieldset>
             <button class="primary-action" type="submit">
               <span aria-hidden="true">✓</span>
               保存
             </button>
           </form>
+          <div class="member-list-head">
+            <strong>メンバー</strong>
+            <span class="muted">選ぶとプロフィールを見られます</span>
+          </div>
           <div class="member-strip" id="memberStrip"></div>
         </section>
       </main>
@@ -179,7 +188,6 @@
             <label><input type="radio" name="status" value="◎" />◎ 参加できる</label>
             <label><input type="radio" name="status" value="○" />○ たぶん</label>
             <label><input type="radio" name="status" value="△" />△ 未定</label>
-            <label><input type="radio" name="status" value="✕" />✕ 難しい</label>
           </div>
         </fieldset>
         <div class="time-pair">
@@ -207,6 +215,22 @@
       </form>
 
       <div class="thread" id="commentThread"></div>
+    </dialog>
+
+    <dialog class="profile-dialog" id="memberProfileDialog">
+      <form method="dialog">
+        <div class="dialog-head">
+          <div>
+            <p class="muted" id="memberProfileRelation">メンバープロフィール</p>
+            <h2 id="memberProfileName"></h2>
+          </div>
+          <button class="icon-button" value="close" aria-label="プロフィールを閉じる" title="閉じる">×</button>
+        </div>
+      </form>
+      <div class="member-profile-body">
+        <div class="profile-avatar" id="memberProfileAvatar"></div>
+        <p id="memberProfileGreeting"></p>
+      </div>
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
