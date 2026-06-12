@@ -7,26 +7,26 @@ const statusLabels = {
 
 const profileSeparator = "|||";
 const colorOptions = [
-  ["森の緑", "#176b5d"],
-  ["ミント", "#2f9e7c"],
-  ["青空", "#2872b8"],
-  ["深い青", "#315aa8"],
-  ["あじさい", "#6b61b5"],
-  ["すみれ", "#8b5bb5"],
-  ["桃色", "#d45f8c"],
-  ["さくら", "#e4869f"],
-  ["赤", "#c24848"],
-  ["珊瑚", "#df6b5d"],
-  ["夕焼け", "#d67b31"],
-  ["山吹", "#c89220"],
-  ["レモン", "#b6a326"],
-  ["若草", "#6e9b42"],
-  ["苔", "#52784b"],
-  ["水色", "#3f91a7"],
-  ["灰青", "#58768f"],
+  ["グリーン", "#176b5d"],
+  ["ミントグリーン", "#2f9e7c"],
+  ["ブルー", "#2872b8"],
+  ["ネイビーブルー", "#315aa8"],
+  ["パープル", "#6b61b5"],
+  ["バイオレット", "#8b5bb5"],
+  ["ピンク", "#d45f8c"],
+  ["ライトピンク", "#e4869f"],
+  ["レッド", "#c24848"],
+  ["コーラル", "#df6b5d"],
+  ["オレンジ", "#d67b31"],
+  ["イエロー", "#c89220"],
+  ["レモンイエロー", "#b6a326"],
+  ["ライトグリーン", "#6e9b42"],
+  ["オリーブ", "#52784b"],
+  ["ライトブルー", "#3f91a7"],
+  ["ブルーグレー", "#58768f"],
   ["グレー", "#737b78"],
-  ["こげ茶", "#7b5946"],
-  ["黒", "#333936"],
+  ["ブラウン", "#7b5946"],
+  ["ブラック", "#333936"],
 ];
 
 const profileKey = "climb-sync-profile-v3";
@@ -463,20 +463,15 @@ function renderMembers() {
 
 function renderColorPicker() {
   const picker = document.querySelector("#colorPicker");
-  picker.innerHTML = colorOptions.map(([name, value]) => `
-    <button class="color-option${profile.color === value ? " selected" : ""}" type="button"
-      data-color="${value}" aria-label="${name}" title="${name}">
-      <span class="color-swatch" style="background:${value}"></span>
-      <span>${name}</span>
-    </button>
-  `).join("");
-  picker.querySelectorAll(".color-option").forEach((button) => {
-    button.addEventListener("click", () => {
-      document.querySelector("#colorInput").value = button.dataset.color;
-      picker.querySelectorAll(".color-option").forEach((option) => option.classList.remove("selected"));
-      button.classList.add("selected");
-    });
-  });
+  picker.innerHTML = colorOptions.map(([name, value]) =>
+    `<option value="${value}"${profile.color === value ? " selected" : ""}>${name}</option>`
+  ).join("");
+  updateSelectedColor(picker.value);
+}
+
+function updateSelectedColor(value) {
+  document.querySelector("#colorInput").value = value;
+  document.querySelector("#selectedColor").style.background = value;
 }
 
 function openMemberProfile(member) {
@@ -610,6 +605,10 @@ document.querySelector("#profileForm").addEventListener("submit", async (event) 
     renderMembers();
     showToast("端末には保存しました。共有更新に失敗しました");
   }
+});
+
+document.querySelector("#colorPicker").addEventListener("change", (event) => {
+  updateSelectedColor(event.target.value);
 });
 
 document.querySelector("#jumpBestDay").addEventListener("click", () => {
