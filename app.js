@@ -8,6 +8,7 @@ const statusLabels = {
 const profileKey = "climb-sync-profile-v3";
 const themeKey = "climb-sync-theme-v3";
 const accessKey = "climb-sync-access-v1";
+const deletedMarker = "__CLIMB_SYNC_DELETED__";
 const api = window.CLIMB_SYNC_CONFIG || {};
 const inviteToken = new URLSearchParams(location.hash.slice(1)).get("invite");
 const hasAccess = inviteToken === api.inviteKey || localStorage.getItem(accessKey) === api.inviteKey;
@@ -23,8 +24,47 @@ if (hasAccess) {
 
 const today = new Date();
 let visibleMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+let timelineWeekStart = startOfWeek(today);
 let selectedDate = "";
 let attendances = {};
+
+const japaneseHolidays = new Map([
+  ["2026-01-01", "元日"],
+  ["2026-01-12", "成人の日"],
+  ["2026-02-11", "建国記念の日"],
+  ["2026-02-23", "天皇誕生日"],
+  ["2026-03-20", "春分の日"],
+  ["2026-04-29", "昭和の日"],
+  ["2026-05-03", "憲法記念日"],
+  ["2026-05-04", "みどりの日"],
+  ["2026-05-05", "こどもの日"],
+  ["2026-05-06", "休日"],
+  ["2026-07-20", "海の日"],
+  ["2026-08-11", "山の日"],
+  ["2026-09-21", "敬老の日"],
+  ["2026-09-22", "休日"],
+  ["2026-09-23", "秋分の日"],
+  ["2026-10-12", "スポーツの日"],
+  ["2026-11-03", "文化の日"],
+  ["2026-11-23", "勤労感謝の日"],
+  ["2027-01-01", "元日"],
+  ["2027-01-11", "成人の日"],
+  ["2027-02-11", "建国記念の日"],
+  ["2027-02-23", "天皇誕生日"],
+  ["2027-03-21", "春分の日"],
+  ["2027-03-22", "休日"],
+  ["2027-04-29", "昭和の日"],
+  ["2027-05-03", "憲法記念日"],
+  ["2027-05-04", "みどりの日"],
+  ["2027-05-05", "こどもの日"],
+  ["2027-07-19", "海の日"],
+  ["2027-08-11", "山の日"],
+  ["2027-09-20", "敬老の日"],
+  ["2027-09-23", "秋分の日"],
+  ["2027-10-11", "スポーツの日"],
+  ["2027-11-03", "文化の日"],
+  ["2027-11-23", "勤労感謝の日"],
+]);
 
 function loadProfile() {
   try {
@@ -77,6 +117,18 @@ function parseDate(key) {
   return new Date(year, month - 1, day);
 }
 
+function startOfWeek(date) {
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  return start;
+}
+
+function dayColorClass(date) {
+  if (japaneseHolidays.has(dateKey(date)) || date.getDay() === 0) return "is-sunday";
+  if (date.getDay() === 6) return "is-saturday";
+  return "";
+}
+
 function formatMonth(date) {
   return new Intl.DateTimeFormat("ja-JP", { year: "numeric", month: "long" }).format(date);
 }
@@ -115,6 +167,7 @@ function headers(extra = {}) {
 }
 
 function mapRow(row) {
+  const comment = row.comment || "";
   return {
     memberId: row.user_id,
     name: row.nickname,
@@ -123,7 +176,9 @@ function mapRow(row) {
     status: row.status,
     start: row.start_time?.slice(0, 5) || "",
     end: row.end_time?.slice(0, 5) || "",
-    comment: row.comment || "",
+    comment: comment === deletedMarker ? "" : comment,
+    isDeleted: comment === deletedMarker
+      || (row.status === "✕" && !row.start_time && !row.end_time && !comment),
   };
 }
 
@@ -182,12 +237,16 @@ async function deleteAttendance() {
     status: "✕",
     start: "",
     end: "",
-    comment: "",
+    comment: deletedMarker,
   });
 }
 
 function relevantAttendances(key) {
-  return (attendances[key] || []).filter((item) => item.status !== "✕");
+  return (attendances[key] || []).filter((item) => !item.isDeleted && item.status !== "✕");
+}
+
+function activeAttendances(key) {
+  return (attendances[key] || []).filter((item) => !item.isDeleted);
 }
 
 function renderAvatar(member, title) {
@@ -215,12 +274,15 @@ function renderCalendar() {
     if (date.getMonth() !== month) button.classList.add("is-muted");
     if (key === todayKey) button.classList.add("is-today");
     if (items.length >= 4) button.classList.add("is-popular");
+    const colorClass = dayColorClass(date);
+    if (colorClass) button.classList.add(colorClass);
+    const holiday = japaneseHolidays.get(key);
     button.setAttribute("aria-label", `${formatDay(date)}、参加予定${items.length}人`);
     const avatarHtml = items.slice(0, 4).map((item) => renderAvatar(item)).join("");
     const note = escapeHtml(items.find((item) => item.comment)?.comment || "");
     button.innerHTML = `
       <span class="day-number">
-        <span>${date.getDate()}</span>
+        <span title="${holiday || ""}">${date.getDate()}</span>
         ${items.length ? `<span class="count-badge">${items.length}人</span>` : ""}
       </span>
       <span class="avatars">${avatarHtml}</span>
@@ -240,8 +302,7 @@ function openDay(key) {
 }
 
 function renderDayDetails() {
-  const items = attendances[selectedDate] || [];
-  const visible = items.filter((item) => item.status !== "✕");
+  const visible = activeAttendances(selectedDate);
   daySummary.innerHTML = visible.length
     ? visible.map((item) => `
       <div class="participant">
@@ -255,7 +316,7 @@ function renderDayDetails() {
     `).join("")
     : `<p class="muted">まだ参加予定はありません。最初に予定を入れてみましょう。</p>`;
 
-  const mine = items.find((item) => item.memberId === profile.id && item.status !== "✕");
+  const mine = visible.find((item) => item.memberId === profile.id);
   deleteAttendanceButton.hidden = !mine;
   attendanceForm.reset();
   const status = mine?.status || "◎";
@@ -274,18 +335,18 @@ function renderDayDetails() {
 }
 
 function renderTimeline() {
-  const base = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), 11);
-  const offset = (base.getDay() + 6) % 7;
-  const monday = new Date(base);
-  monday.setDate(base.getDate() - offset);
   const dates = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(monday);
-    date.setDate(monday.getDate() + index);
+    const date = new Date(timelineWeekStart);
+    date.setDate(timelineWeekStart.getDate() + index);
     return date;
   });
+  const first = dates[0];
+  const last = dates[6];
+  document.querySelector("#timelineTitle").textContent =
+    `${first.getMonth() + 1}/${first.getDate()}〜${last.getMonth() + 1}/${last.getDate()}の重なり`;
   const timeSlots = [11, 13, 15, 17, 19, 21];
   const header = `<div class="timeline-row"><div class="time-label">時間</div>${dates.map((date) =>
-    `<div class="timeline-cell"><strong>${date.getMonth() + 1}/${date.getDate()}</strong><br><span class="muted">${["日", "月", "火", "水", "木", "金", "土"][date.getDay()]}</span></div>`
+    `<div class="timeline-cell ${dayColorClass(date)}"><strong title="${japaneseHolidays.get(dateKey(date)) || ""}">${date.getMonth() + 1}/${date.getDate()}</strong><br><span>${["日", "月", "火", "水", "木", "金", "土"][date.getDay()]}</span></div>`
   ).join("")}</div>`;
   const rows = timeSlots.map((hour) => {
     const cells = dates.map((date) => {
@@ -294,7 +355,7 @@ function renderTimeline() {
         const end = Number((item.end || "00:00").split(":")[0]);
         return start <= hour && end > hour;
       });
-      return `<div class="timeline-cell">${items.map((item) =>
+      return `<div class="timeline-cell ${dayColorClass(date)}">${items.map((item) =>
         `<span class="timeline-pill" style="background:${item.color}">${escapeHtml(item.name)}</span>`
       ).join("")}</div>`;
     }).join("");
@@ -350,6 +411,7 @@ attendanceForm.addEventListener("submit", async (event) => {
   try {
     await saveAttendance(item);
     await loadAttendances({ quiet: true });
+    dayDialog.close();
     showToast("みんなのカレンダーに保存しました");
   } catch (error) {
     console.error(error);
@@ -388,6 +450,21 @@ document.querySelector("#todayButton").addEventListener("click", () => {
   const now = new Date();
   visibleMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   renderCalendar();
+  renderTimeline();
+});
+
+document.querySelector("#prevWeek").addEventListener("click", () => {
+  timelineWeekStart.setDate(timelineWeekStart.getDate() - 7);
+  renderTimeline();
+});
+
+document.querySelector("#currentWeek").addEventListener("click", () => {
+  timelineWeekStart = startOfWeek(new Date());
+  renderTimeline();
+});
+
+document.querySelector("#nextWeek").addEventListener("click", () => {
+  timelineWeekStart.setDate(timelineWeekStart.getDate() + 7);
   renderTimeline();
 });
 
