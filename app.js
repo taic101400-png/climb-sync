@@ -329,7 +329,11 @@ function renderCalendar() {
     button.className = "day-cell";
     if (date.getMonth() !== month) button.classList.add("is-muted");
     if (key === todayKey) button.classList.add("is-today");
-    if (items.length >= 2) button.classList.add("is-popular");
+    if (items.length >= 3) {
+      button.classList.add("is-crowded");
+    } else if (items.length === 2) {
+      button.classList.add("is-popular");
+    }
     const colorClass = dayColorClass(date);
     if (colorClass) button.classList.add(colorClass);
     const holiday = japaneseHolidays.get(key);
