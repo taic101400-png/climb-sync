@@ -132,7 +132,10 @@
             </label>
             <fieldset>
               <legend>表示カラー</legend>
-              <div class="color-picker" id="colorPicker" aria-label="表示カラーを選択"></div>
+              <div class="color-select-row">
+                <span class="selected-color" id="selectedColor" aria-hidden="true"></span>
+                <select id="colorPicker" aria-label="表示カラーを選択"></select>
+              </div>
               <input id="colorInput" type="hidden" />
             </fieldset>
             <button class="primary-action" type="submit">
