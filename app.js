@@ -5,6 +5,30 @@ const statusLabels = {
   "✕": "難しい",
 };
 
+const profileSeparator = "|||";
+const colorOptions = [
+  ["森の緑", "#176b5d"],
+  ["ミント", "#2f9e7c"],
+  ["青空", "#2872b8"],
+  ["深い青", "#315aa8"],
+  ["あじさい", "#6b61b5"],
+  ["すみれ", "#8b5bb5"],
+  ["桃色", "#d45f8c"],
+  ["さくら", "#e4869f"],
+  ["赤", "#c24848"],
+  ["珊瑚", "#df6b5d"],
+  ["夕焼け", "#d67b31"],
+  ["山吹", "#c89220"],
+  ["レモン", "#b6a326"],
+  ["若草", "#6e9b42"],
+  ["苔", "#52784b"],
+  ["水色", "#3f91a7"],
+  ["灰青", "#58768f"],
+  ["グレー", "#737b78"],
+  ["こげ茶", "#7b5946"],
+  ["黒", "#333936"],
+];
+
 const profileKey = "climb-sync-profile-v3";
 const themeKey = "climb-sync-theme-v3";
 const accessKey = "climb-sync-access-v1";
@@ -74,7 +98,8 @@ function loadProfile() {
   const profile = {
     id: crypto.randomUUID(),
     name: "あなた",
-    initials: "YOU",
+    greeting: "",
+    initials: "あなた",
     color: "#176b5d",
   };
   localStorage.setItem(profileKey, JSON.stringify(profile));
@@ -95,6 +120,7 @@ const timeline = document.querySelector("#timeline");
 const toast = document.querySelector("#toast");
 const syncStatus = document.querySelector("#syncStatus");
 const deleteAttendanceButton = document.querySelector("#deleteAttendance");
+const memberProfileDialog = document.querySelector("#memberProfileDialog");
 
 function escapeHtml(value) {
   return String(value)
@@ -142,7 +168,19 @@ function formatDay(date) {
 }
 
 function initials(name) {
-  return name.trim().slice(0, 2).toUpperCase() || "YOU";
+  return name.trim().slice(0, 4).toUpperCase() || "自分";
+}
+
+function packProfileName(name, greeting = "") {
+  return `${name}${profileSeparator}${greeting}`;
+}
+
+function unpackProfileName(value) {
+  const [name, ...greetingParts] = String(value || "").split(profileSeparator);
+  return {
+    name: name || "名前なし",
+    greeting: greetingParts.join(profileSeparator).slice(0, 20),
+  };
 }
 
 function showToast(message) {
@@ -168,10 +206,12 @@ function headers(extra = {}) {
 
 function mapRow(row) {
   const comment = row.comment || "";
+  const sharedProfile = unpackProfileName(row.nickname);
   return {
     memberId: row.user_id,
-    name: row.nickname,
-    initials: initials(row.nickname),
+    name: sharedProfile.name,
+    greeting: sharedProfile.greeting,
+    initials: initials(sharedProfile.name),
     color: row.color_hex,
     status: row.status,
     start: row.start_time?.slice(0, 5) || "",
@@ -215,7 +255,7 @@ async function saveAttendance(item) {
     group_code: "CLIMB-610",
     date: selectedDate,
     user_id: profile.id,
-    nickname: profile.name,
+    nickname: packProfileName(profile.name, profile.greeting),
     color_hex: profile.color,
     status: item.status,
     start_time: item.start || null,
@@ -228,6 +268,22 @@ async function saveAttendance(item) {
     headers: headers({ Prefer: "resolution=merge-duplicates,return=minimal" }),
     body: JSON.stringify(body),
   });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+}
+
+async function syncProfileToAttendances() {
+  const response = await fetch(
+    `${api.url}/rest/v1/attendances?group_code=eq.CLIMB-610&user_id=eq.${encodeURIComponent(profile.id)}`,
+    {
+      method: "PATCH",
+      headers: headers({ Prefer: "return=minimal" }),
+      body: JSON.stringify({
+        nickname: packProfileName(profile.name, profile.greeting),
+        color_hex: profile.color,
+        updated_at: new Date().toISOString(),
+      }),
+    },
+  );
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
 }
 
@@ -273,7 +329,7 @@ function renderCalendar() {
     button.className = "day-cell";
     if (date.getMonth() !== month) button.classList.add("is-muted");
     if (key === todayKey) button.classList.add("is-today");
-    if (items.length >= 4) button.classList.add("is-popular");
+    if (items.length >= 2) button.classList.add("is-popular");
     const colorClass = dayColorClass(date);
     if (colorClass) button.classList.add(colorClass);
     const holiday = japaneseHolidays.get(key);
@@ -380,12 +436,60 @@ function updateBestDayNotice() {
 
 function renderMembers() {
   const unique = new Map([[profile.id, profile]]);
-  Object.values(attendances).flat().forEach((item) => unique.set(item.memberId, item));
+  Object.values(attendances).flat().filter((item) => !item.isDeleted)
+    .forEach((item) => unique.set(item.memberId, item));
   document.querySelector("#memberStrip").innerHTML = [...unique.values()]
-    .map((member) => `<span class="member-chip">${renderAvatar(member)}${escapeHtml(member.name)}</span>`)
+    .map((member) => `
+      <button class="member-chip" type="button" data-member-id="${escapeHtml(member.memberId || member.id)}">
+        ${renderAvatar(member)}
+        <span>
+          <strong>${member.memberId === profile.id || member.id === profile.id ? "自分" : "メンバー"}</strong>
+          ${escapeHtml(member.name)}
+        </span>
+      </button>
+    `)
     .join("");
   document.querySelector("#nicknameInput").value = profile.name;
+  document.querySelector("#greetingInput").value = profile.greeting || "";
   document.querySelector("#colorInput").value = profile.color;
+  renderColorPicker();
+  document.querySelectorAll(".member-chip").forEach((button) => {
+    button.addEventListener("click", () => {
+      const member = unique.get(button.dataset.memberId);
+      if (member) openMemberProfile(member);
+    });
+  });
+}
+
+function renderColorPicker() {
+  const picker = document.querySelector("#colorPicker");
+  picker.innerHTML = colorOptions.map(([name, value]) => `
+    <button class="color-option${profile.color === value ? " selected" : ""}" type="button"
+      data-color="${value}" aria-label="${name}" title="${name}">
+      <span class="color-swatch" style="background:${value}"></span>
+      <span>${name}</span>
+    </button>
+  `).join("");
+  picker.querySelectorAll(".color-option").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.querySelector("#colorInput").value = button.dataset.color;
+      picker.querySelectorAll(".color-option").forEach((option) => option.classList.remove("selected"));
+      button.classList.add("selected");
+    });
+  });
+}
+
+function openMemberProfile(member) {
+  const isSelf = (member.memberId || member.id) === profile.id;
+  document.querySelector("#memberProfileRelation").textContent =
+    isSelf ? "あなたのプロフィール" : "メンバープロフィール";
+  document.querySelector("#memberProfileName").textContent = member.name;
+  const avatar = document.querySelector("#memberProfileAvatar");
+  avatar.style.background = member.color;
+  avatar.textContent = initials(member.name);
+  document.querySelector("#memberProfileGreeting").textContent =
+    member.greeting || "ひとことはまだありません。";
+  memberProfileDialog.showModal();
 }
 
 function applyTheme() {
@@ -487,16 +591,25 @@ document.querySelector("#themeToggle").addEventListener("click", () => {
 document.querySelector("#profileForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const name = document.querySelector("#nicknameInput").value.trim();
+  const greeting = document.querySelector("#greetingInput").value.trim();
   if (!name) return;
   profile = {
     ...profile,
     name,
+    greeting,
     initials: initials(name),
     color: document.querySelector("#colorInput").value,
   };
   localStorage.setItem(profileKey, JSON.stringify(profile));
-  renderMembers();
-  showToast("プロフィールを保存しました");
+  try {
+    await syncProfileToAttendances();
+    await loadAttendances({ quiet: true });
+    showToast("プロフィールを保存しました");
+  } catch (error) {
+    console.error(error);
+    renderMembers();
+    showToast("端末には保存しました。共有更新に失敗しました");
+  }
 });
 
 document.querySelector("#jumpBestDay").addEventListener("click", () => {
