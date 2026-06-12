@@ -52,6 +52,41 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+.access-gate {
+  display: none;
+}
+
+body.access-locked .app-shell {
+  display: none;
+}
+
+body.access-locked .access-gate {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+}
+
+.access-gate > div {
+  width: min(460px, 100%);
+  padding: 32px 24px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.access-gate .gym-badge {
+  margin: 0 auto 20px;
+}
+
+.access-gate p:last-child {
+  margin: 18px auto 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
 button,
 input,
 textarea {
@@ -152,6 +187,13 @@ h2 {
   font-weight: 900;
 }
 
+.group-schedule {
+  margin: 5px 0 8px;
+  color: var(--accent);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
 .share-actions,
 .month-controls {
   gap: 8px;
@@ -161,6 +203,7 @@ h2 {
 
 .primary-action,
 .secondary-action,
+.danger-action,
 .today-button,
 .icon-button {
   border: 0;
@@ -171,6 +214,7 @@ h2 {
 
 .primary-action,
 .secondary-action,
+.danger-action,
 .today-button {
   display: inline-flex;
   align-items: center;
@@ -188,6 +232,16 @@ h2 {
 
 .primary-action:hover {
   background: var(--brand-strong);
+}
+
+.danger-action {
+  border: 1px solid color-mix(in srgb, var(--nope) 55%, var(--line));
+  background: transparent;
+  color: var(--nope);
+}
+
+.danger-action:hover {
+  background: color-mix(in srgb, var(--nope) 10%, transparent);
 }
 
 .secondary-action,
@@ -710,7 +764,15 @@ legend {
 }
 </style>
   </head>
-  <body>
+  <body class="access-locked">
+    <section class="access-gate" id="accessGate" aria-labelledby="accessTitle">
+      <div>
+        <div class="gym-badge" aria-hidden="true">CL</div>
+        <p class="eyebrow">Private Group</p>
+        <h1 id="accessTitle">ボルダリング会</h1>
+        <p>このアプリは招待リンクを受け取ったメンバー専用です。</p>
+      </div>
+    </section>
     <div class="app-shell">
       <header class="topbar">
         <div>
@@ -728,7 +790,8 @@ legend {
             <div class="gym-badge" aria-hidden="true">CL</div>
             <div>
               <p class="muted">今週のグループ</p>
-              <h2>水曜ボルダー会</h2>
+              <h2>ボルダリング会</h2>
+              <p class="group-schedule">毎週水曜日</p>
               <p>招待コード <strong>CLIMB-610</strong> · <span id="syncStatus">接続中</span></p>
             </div>
           </div>
@@ -886,6 +949,10 @@ legend {
           <span aria-hidden="true">＋</span>
           参加予定を保存
         </button>
+        <button class="danger-action full" id="deleteAttendance" type="button" hidden>
+          <span aria-hidden="true">×</span>
+          この日の予定を削除
+        </button>
       </form>
 
       <div class="thread" id="commentThread"></div>
@@ -894,7 +961,8 @@ legend {
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script>window.CLIMB_SYNC_CONFIG = {
   url: "https://zfsbaqzuzncajsofwnja.supabase.co",
-  anonKey: "sb_publishable_q7jPguVizsQjCvH_69EE9w_0q4Tp9Qr"
+  anonKey: "sb_publishable_q7jPguVizsQjCvH_69EE9w_0q4Tp9Qr",
+  inviteKey: "Mb3WkoXoeYeGBoFrmJRzJ0kIutO1UNb1"
 };
 
 const statusLabels = {
@@ -906,7 +974,20 @@ const statusLabels = {
 
 const profileKey = "climb-sync-profile-v3";
 const themeKey = "climb-sync-theme-v3";
+const accessKey = "climb-sync-access-v1";
 const api = window.CLIMB_SYNC_CONFIG || {};
+const inviteToken = new URLSearchParams(location.hash.slice(1)).get("invite");
+const hasAccess = inviteToken === api.inviteKey || localStorage.getItem(accessKey) === api.inviteKey;
+
+if (inviteToken === api.inviteKey) {
+  localStorage.setItem(accessKey, api.inviteKey);
+  history.replaceState(null, "", location.pathname + location.search);
+}
+
+if (hasAccess) {
+  document.body.classList.remove("access-locked");
+}
+
 const today = new Date();
 let visibleMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 let selectedDate = "";
@@ -940,6 +1021,7 @@ const commentThread = document.querySelector("#commentThread");
 const timeline = document.querySelector("#timeline");
 const toast = document.querySelector("#toast");
 const syncStatus = document.querySelector("#syncStatus");
+const deleteAttendanceButton = document.querySelector("#deleteAttendance");
 
 function escapeHtml(value) {
   return String(value)
@@ -1061,6 +1143,16 @@ async function saveAttendance(item) {
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
 }
 
+async function deleteAttendance() {
+  setSyncStatus("削除中");
+  await saveAttendance({
+    status: "✕",
+    start: "",
+    end: "",
+    comment: "",
+  });
+}
+
 function relevantAttendances(key) {
   return (attendances[key] || []).filter((item) => item.status !== "✕");
 }
@@ -1130,7 +1222,8 @@ function renderDayDetails() {
     `).join("")
     : `<p class="muted">まだ参加予定はありません。最初に予定を入れてみましょう。</p>`;
 
-  const mine = items.find((item) => item.memberId === profile.id);
+  const mine = items.find((item) => item.memberId === profile.id && item.status !== "✕");
+  deleteAttendanceButton.hidden = !mine;
   attendanceForm.reset();
   const status = mine?.status || "◎";
   const radio = attendanceForm.querySelector(`[name="status"][value="${status}"]`);
@@ -1232,6 +1325,20 @@ attendanceForm.addEventListener("submit", async (event) => {
   }
 });
 
+deleteAttendanceButton.addEventListener("click", async () => {
+  if (!window.confirm(`${formatDay(parseDate(selectedDate))}の予定を削除しますか？`)) return;
+  try {
+    await deleteAttendance();
+    await loadAttendances({ quiet: true });
+    dayDialog.close();
+    showToast("予定を削除しました");
+  } catch (error) {
+    console.error(error);
+    setSyncStatus("削除エラー", true);
+    showToast("予定を削除できませんでした");
+  }
+});
+
 document.querySelector("#prevMonth").addEventListener("click", () => {
   visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1);
   renderCalendar();
@@ -1252,11 +1359,12 @@ document.querySelector("#todayButton").addEventListener("click", () => {
 });
 
 document.querySelector("#copyInvite").addEventListener("click", async () => {
+  const inviteUrl = `${location.origin}${location.pathname}#invite=${api.inviteKey}`;
   try {
-    await navigator.clipboard.writeText(location.origin + location.pathname);
+    await navigator.clipboard.writeText(inviteUrl);
     showToast("招待リンクをコピーしました");
   } catch {
-    showToast("ブラウザのURLを友達に送ってください");
+    showToast(inviteUrl);
   }
 });
 
@@ -1296,9 +1404,11 @@ document.querySelectorAll(".nav-item").forEach((button) => {
 });
 
 applyTheme();
-renderAll();
-loadAttendances();
-window.setInterval(() => loadAttendances({ quiet: true }), 30000);
+if (hasAccess) {
+  renderAll();
+  loadAttendances();
+  window.setInterval(() => loadAttendances({ quiet: true }), 30000);
+}
 </script>
   </body>
 </html>
