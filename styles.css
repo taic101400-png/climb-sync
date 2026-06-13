@@ -358,6 +358,24 @@ h2 {
   font-weight: 900;
 }
 
+.date-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.my-attendance-check {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--good);
+  color: white;
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
 .count-badge {
   min-width: 26px;
   padding: 3px 7px;
