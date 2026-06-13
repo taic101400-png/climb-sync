@@ -324,6 +324,7 @@ function renderCalendar() {
     date.setDate(start.getDate() + index);
     const key = dateKey(date);
     const items = relevantAttendances(key);
+    const hasMyAttendance = items.some((item) => item.memberId === profile.id);
     const button = document.createElement("button");
     button.type = "button";
     button.className = "day-cell";
@@ -342,7 +343,10 @@ function renderCalendar() {
     const note = escapeHtml(items.find((item) => item.comment)?.comment || "");
     button.innerHTML = `
       <span class="day-number">
-        <span title="${holiday || ""}">${date.getDate()}</span>
+        <span class="date-label">
+          <span title="${holiday || ""}">${date.getDate()}</span>
+          ${hasMyAttendance ? `<span class="my-attendance-check" title="自分の予定あり" aria-label="自分の予定あり">✓</span>` : ""}
+        </span>
         ${items.length ? `<span class="count-badge">${items.length}人</span>` : ""}
       </span>
       <span class="avatars">${avatarHtml}</span>
