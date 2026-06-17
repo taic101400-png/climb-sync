@@ -32,6 +32,8 @@ const colorOptions = [
 const profileKey = "climb-sync-profile-v3";
 const themeKey = "climb-sync-theme-v3";
 const accessKey = "climb-sync-access-v1";
+const reminderKey = "climb-sync-reminder-enabled-v1";
+const reminderSentKey = "climb-sync-reminder-sent-v1";
 const deletedMarker = "__CLIMB_SYNC_DELETED__";
 const api = window.CLIMB_SYNC_CONFIG || {};
 const inviteToken = new URLSearchParams(location.hash.slice(1)).get("invite");
@@ -121,6 +123,8 @@ const toast = document.querySelector("#toast");
 const syncStatus = document.querySelector("#syncStatus");
 const deleteAttendanceButton = document.querySelector("#deleteAttendance");
 const memberProfileDialog = document.querySelector("#memberProfileDialog");
+const reminderStatus = document.querySelector("#reminderStatus");
+const enableReminderButton = document.querySelector("#enableReminder");
 
 function escapeHtml(value) {
   return String(value)
@@ -141,6 +145,12 @@ function dateKey(date) {
 function parseDate(key) {
   const [year, month, day] = key.split("-").map(Number);
   return new Date(year, month - 1, day);
+}
+
+function tomorrowDateKey() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return dateKey(tomorrow);
 }
 
 function startOfWeek(date) {
@@ -241,6 +251,8 @@ async function loadAttendances({ quiet = false } = {}) {
     }, {});
     renderAll();
     if (selectedDate && dayDialog.open) renderDayDetails();
+    updateReminderStatus();
+    maybeSendTomorrowReminder();
     setSyncStatus("同期済み");
   } catch (error) {
     console.error(error);
@@ -303,6 +315,62 @@ function relevantAttendances(key) {
 
 function activeAttendances(key) {
   return (attendances[key] || []).filter((item) => !item.isDeleted);
+}
+
+function getMyAttendance(key) {
+  return activeAttendances(key).find((item) => item.memberId === profile.id);
+}
+
+function updateReminderStatus() {
+  if (!reminderStatus || !enableReminderButton) return;
+  if (!("Notification" in window)) {
+    reminderStatus.textContent = "この端末ではブラウザ通知に対応していません。";
+    enableReminderButton.hidden = true;
+    return;
+  }
+  const enabled = localStorage.getItem(reminderKey) === "on";
+  enableReminderButton.hidden = enabled && Notification.permission === "granted";
+  if (Notification.permission === "denied") {
+    reminderStatus.textContent = "通知がブロックされています。端末やブラウザ設定から許可してください。";
+    enableReminderButton.hidden = true;
+    return;
+  }
+  if (enabled && Notification.permission === "granted") {
+    reminderStatus.textContent = "前日にこの端末へ通知します。各メンバーが自分の端末でオンにしてください。";
+    return;
+  }
+  reminderStatus.textContent = "通知をオンにすると、自分が予定を入れた日の前日にこの端末へ知らせます。";
+}
+
+function sentReminderIds() {
+  try {
+    return JSON.parse(localStorage.getItem(reminderSentKey)) || [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberSentReminder(id) {
+  const next = [id, ...sentReminderIds().filter((saved) => saved !== id)].slice(0, 30);
+  localStorage.setItem(reminderSentKey, JSON.stringify(next));
+}
+
+function maybeSendTomorrowReminder() {
+  if (!("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+  if (localStorage.getItem(reminderKey) !== "on") return;
+  const key = tomorrowDateKey();
+  const mine = getMyAttendance(key);
+  if (!mine) return;
+  const reminderId = `${profile.id}:${key}`;
+  if (sentReminderIds().includes(reminderId)) return;
+  const when = formatDay(parseDate(key));
+  const time = mine.start && mine.end ? `${mine.start}〜${mine.end}` : "時間未定";
+  new Notification("明日はボルダリング会です", {
+    body: `${when} ${time}で予定が入っています。`,
+    tag: reminderId,
+  });
+  rememberSentReminder(reminderId);
 }
 
 function renderAvatar(member, title) {
@@ -585,6 +653,25 @@ document.querySelector("#copyInvite").addEventListener("click", async () => {
   }
 });
 
+enableReminderButton?.addEventListener("click", async () => {
+  if (!("Notification" in window)) return updateReminderStatus();
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission === "granted") {
+      localStorage.setItem(reminderKey, "on");
+      updateReminderStatus();
+      maybeSendTomorrowReminder();
+      showToast("前日通知をオンにしました");
+    } else {
+      updateReminderStatus();
+      showToast("通知が許可されませんでした");
+    }
+  } catch (error) {
+    console.error(error);
+    showToast("通知設定を変更できませんでした");
+  }
+});
+
 document.querySelector("#themeToggle").addEventListener("click", () => {
   theme = theme === "dark" ? "light" : "dark";
   localStorage.setItem(themeKey, theme);
@@ -636,6 +723,8 @@ document.querySelectorAll(".nav-item").forEach((button) => {
 applyTheme();
 if (hasAccess) {
   renderAll();
+  updateReminderStatus();
   loadAttendances();
+  window.setInterval(maybeSendTomorrowReminder, 60 * 60 * 1000);
   window.setInterval(() => loadAttendances({ quiet: true }), 30000);
 }
